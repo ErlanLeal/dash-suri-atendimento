@@ -51,8 +51,7 @@ try:
     df_raw['data_snapshot'] = pd.to_datetime(df_raw['data_snapshot']).dt.date
     df_raw['dias_atraso'] = pd.to_numeric(df_raw['dias_atraso'], errors='coerce').fillna(0).astype(int)
 
-    sort_col = 'id' if 'id' in df_raw.columns else df_raw.columns[0]
-    df = df_raw.sort_values(sort_col, ascending=False).drop_duplicates(subset=['id_card', 'data_snapshot']).copy()
+    df = df_raw.sort_values('id', ascending=False).drop_duplicates(subset=['id_empresa', 'data_snapshot']).copy()
 
     def categorizar(dias):
         if dias == 4: return "ALERTA"
@@ -134,4 +133,4 @@ try:
         st.plotly_chart(fig_delay, use_container_width=True)
 
 except Exception as e:
-    st.error(f"Erro na conexão ou colunas ausentes: {e}")
+    st.error(f"Erro: {e}")
