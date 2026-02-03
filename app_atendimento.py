@@ -29,7 +29,6 @@ st.markdown("""
         order: -1;
     }
 
-    /* Valor e Delta Lado a Lado (Padrão Executivo) */
     div[data-testid="stMetric"] > div:nth-child(2) {
         display: flex !important;
         flex-direction: row !important;
@@ -57,12 +56,17 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 try:
-    # 2. Conexão com a Nova Tabela de Atendimento
+    # 2. Conexão e Limpeza de Snapshots (8h, 12h, 17h)
     conn = st.connection("postgresql", type="sql")
-    df = conn.query("SELECT * FROM sla_atendimento;", ttl="5m")
+    df_raw = conn.query("SELECT * FROM sla_atendimento;", ttl="5m")
 
-    df['data_snapshot'] = pd.to_datetime(df['data_snapshot']).dt.date
-    df['dias_atraso'] = pd.to_numeric(df['dias_atraso'], errors='coerce').fillna(0).astype(int)
+    # Tratamento de Tipagem
+    df_raw['data_snapshot'] = pd.to_datetime(df_raw['data_snapshot']).dt.date
+    df_raw['dias_atraso'] = pd.to_numeric(df_raw['dias_atraso'], errors='coerce').fillna(0).astype(int)
+
+    # LÓGICA DE DEDUPLICAÇÃO: Mantém apenas o registro mais recente (maior ID) de cada card por dia
+    # Isso impede que o volume triplique nas métricas diárias
+    df = df_raw.sort_values('id', ascending=False).drop_duplicates(subset=['id_card', 'data_snapshot']).copy()
 
     # 3. Lógica de SLA: 4 dias para Atendimento
     def categorizar_atendimento(dias):
@@ -90,6 +94,7 @@ try:
             delta_val = len(df_view) - vol_ant
 
         st.title("Control Tower Atendimento")
+        st.write(f"Análise baseada na última atualização disponível para o dia {data_sel.strftime('%d/%m/%Y')}")
         st.write("---")
 
         c1, c2, c3, c4 = st.columns(4)
@@ -119,7 +124,9 @@ try:
         st.write("---")
         st.subheader("Detalhamento de Exceções")
         df_acao = df_view[df_view['status'] != "OK"].sort_values('dias_atraso', ascending=False)
-        st.dataframe(df_acao[['nome_empresa', 'operadora', 'fila_atual', 'dias_atraso', 'status']].style.applymap(
+        
+        # Inclusão da coluna 'corretora' após 'operadora'
+        st.dataframe(df_acao[['nome_empresa', 'operadora', 'corretora', 'fila_atual', 'dias_atraso', 'status']].style.applymap(
             lambda x: 'background-color: #3e1c1c; color: #ff7b72' if x > 4 else ('background-color: #3e331c; color: #d29922' if x == 4 else ''),
             subset=['dias_atraso']
         ), use_container_width=True, hide_index=True)
@@ -129,7 +136,6 @@ try:
         st.title("Planejamento e Tendências")
         st.write("---")
 
-        # Controle de Janela Simples
         opcoes_janela = {"7 dias": 7, "15 dias": 15, "30 dias": 30, "60 dias": 60}
         janela_label = st.sidebar.selectbox("Período de Análise", list(opcoes_janela.keys()), index=2)
         n_dias = opcoes_janela[janela_label]
@@ -140,8 +146,6 @@ try:
         df_vol = df_hist.groupby('data_snapshot').size().reset_index(name='volume').sort_values('data_snapshot')
         fig_vol = px.area(df_vol, x='data_snapshot', y='volume', template="plotly_dark")
         fig_vol.update_traces(line_color='#58a6ff', fillcolor='rgba(88, 166, 255, 0.2)')
-        
-        # Datas Horizontais e Formato BR
         fig_vol.update_xaxes(tickformat="%d/%m/%Y", dtick="D1", tickangle=0, title="")
         st.plotly_chart(fig_vol, use_container_width=True)
 
